@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+backend/myenv/
+backend/__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.git/
+.gitignore
+.env.local
+dev.log

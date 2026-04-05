@@ -1,0 +1,5 @@
+{
+  "name": "Serambi Emosi",
+  "description": "Platform analisis psikologis berbasis suara yang memberikan indikasi emosional untuk refleksi suportif.",
+  "requestFramePermissions": ["microphone"]
+}

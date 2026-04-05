@@ -1,0 +1,11 @@
+{
+  "best_epoch": 60,
+  "best_val_macro_f1_observed": 0.7448767488950139,
+  "best_val_accuracy_observed": 0.75,
+  "restored_val_accuracy": 0.75,
+  "restored_val_macro_precision": 0.7530433064643591,
+  "restored_val_macro_recall": 0.75,
+  "restored_val_macro_f1": 0.7448767488950139,
+  "feature_dim": 120,
+  "max_frames": 119
+}
