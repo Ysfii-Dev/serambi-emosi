@@ -160,7 +160,7 @@ Lihat [`/backend/.env.example`](./backend/.env.example).
 
 | Variable | Wajib | Contoh | Keterangan |
 |---|---|---|---|
-| `CORS_ORIGINS` | Tidak | `http://localhost:3000,http://127.0.0.1:3000` | Daftar origin yang diizinkan |
+| `CORS_ORIGINS` | Tidak | `http://localhost:3000,http://127.x.x:3000` | Daftar origin yang diizinkan |
 | `MAX_AUDIO_UPLOAD_BYTES` | Tidak | `10485760` | Maksimal ukuran upload file audio |
 
 ## Build dan Preview
