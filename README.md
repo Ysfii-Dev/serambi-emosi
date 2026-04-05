@@ -1,9 +1,11 @@
 ---
 title: Serambi Emosi Backend
+emoji: 💻
 colorFrom: blue
 colorTo: green
 sdk: docker
 app_port: 8000
+pinned: false
 short_description: FastAPI backend for voice emotion analysis with TensorFlow.
 ---
 
@@ -46,7 +48,8 @@ serambi-emosi/
 |   `-- nginx.conf
 |-- docs/
 |   |-- API.md
-|   `-- DEPLOYMENT.md
+|   |-- DEPLOYMENT.md
+|   `-- HUGGINGFACE_SPACES.md
 |-- model/
 |   |-- best_model.h5
 |   |-- best_model.keras
@@ -59,6 +62,7 @@ serambi-emosi/
 |   `-- components/
 |-- .env.example
 |-- docker-compose.yml
+|-- Dockerfile
 |-- frontend.Dockerfile
 |-- package.json
 `-- README.md
