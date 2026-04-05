@@ -9,8 +9,24 @@ interface InputAudioPageProps {
 
 const DEFAULT_API_BASE_URL = `${window.location.protocol}//${window.location.hostname}:8000`;
 const RAW_API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim();
-const API_BASE_URL =
-  RAW_API_BASE_URL === undefined ? DEFAULT_API_BASE_URL : RAW_API_BASE_URL.replace(/\/+$/, '');
+const normalizeApiBaseUrl = (value: string | undefined): string => {
+  if (value === undefined) {
+    return DEFAULT_API_BASE_URL;
+  }
+
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return '';
+  }
+
+  if (trimmedValue.startsWith('http://') || trimmedValue.startsWith('https://') || trimmedValue.startsWith('/')) {
+    return trimmedValue.replace(/\/+$/, '');
+  }
+
+  return `https://${trimmedValue.replace(/\/+$/, '')}`;
+};
+
+const API_BASE_URL = normalizeApiBaseUrl(RAW_API_BASE_URL);
 const ALLOWED_EXTENSIONS = new Set(['wav', 'mp3', 'm4a']);
 const ALLOWED_MIME_TYPES = new Set([
   'audio/wav',
