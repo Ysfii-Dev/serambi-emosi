@@ -9,5 +9,7 @@ backend/__pycache__/
 *.pyd
 .git/
 .gitignore
-.env.local
+.env*
+!.env.example
+!backend/.env.example
 dev.log

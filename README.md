@@ -1,3 +1,12 @@
+---
+title: Serambi Emosi Backend
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 8000
+short_description: FastAPI backend for voice emotion analysis with TensorFlow.
+---
+
 # Serambi Emosi
 
 Serambi Emosi adalah aplikasi analisis emosi berbasis suara dengan frontend React + Vite dan backend FastAPI + TensorFlow. Pengguna dapat mengunggah audio `.wav`, `.mp3`, atau `.m4a`, lalu sistem akan menampilkan emosi dominan beserta distribusi probabilitas hasil inferensi model BiLSTM.
@@ -7,6 +16,7 @@ Project ini sudah disiapkan untuk:
 - integrasi frontend-backend
 - deployment manual
 - deployment berbasis Docker
+- deployment backend di Hugging Face Spaces
 
 ## Fitur
 
@@ -220,6 +230,16 @@ Pada mode ini frontend dipublish lewat Nginx dan request `/api/*` diproxy ke bac
 - deploy frontend sebagai static build
 - deploy backend sebagai layanan ASGI/FastAPI
 - arahkan `VITE_API_BASE_URL` ke URL backend atau gunakan reverse proxy `/api`
+
+### Opsi 3: Hugging Face Spaces untuk Backend
+
+- gunakan `Dockerfile` di root repo ini untuk `Docker Space`
+- set `CORS_ORIGINS` ke domain frontend Vercel Anda
+- gunakan direct URL Space berbentuk `https://<space-subdomain>.hf.space` sebagai `VITE_API_BASE_URL`
+
+Panduan langkah demi langkah:
+
+- [docs/HUGGINGFACE_SPACES.md](./docs/HUGGINGFACE_SPACES.md)
 
 Panduan deployment lengkap:
 
