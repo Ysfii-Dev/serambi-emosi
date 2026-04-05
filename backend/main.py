@@ -18,6 +18,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from scipy.signal import butter, filtfilt
+from starlette.concurrency import run_in_threadpool
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -338,12 +339,122 @@ def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def _analyze_audio_file_sync(
+    *,
+    filename: str,
+    temp_path: Path,
+    use_noise_reduction: bool,
+) -> AnalyzeResponse:
+    request_started_at = time.perf_counter()
+
+    try:
+        target_sr = 16000
+        load_started_at = time.perf_counter()
+        y, sr = librosa.load(temp_path, sr=target_sr, mono=True)
+        logger.info(
+            "Audio decoded: filename=%s duration_sec=%.2f decode_sec=%.2f",
+            filename,
+            float(y.size / sr) if sr else 0.0,
+            time.perf_counter() - load_started_at,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Gagal membaca file audio: {exc}") from exc
+
+    if y.size == 0:
+        raise HTTPException(
+            status_code=400, detail="Audio tidak valid atau durasi terlalu pendek.")
+
+    y = _normalize_peak(y)
+
+    if use_noise_reduction:
+        noise_started_at = time.perf_counter()
+        noise_range = ASSETS["config"].get("preprocessing", {}).get(
+            "noise_freq_range", [300, 3400])
+        low_hz = float(noise_range[0])
+        high_hz = float(noise_range[1])
+        y = _bandpass_filter(y, sr=sr, low_hz=low_hz, high_hz=high_hz)
+        y = nr.reduce_noise(y=y, sr=sr)
+        logger.info(
+            "Noise reduction finished: filename=%s noise_reduction_sec=%.2f",
+            filename,
+            time.perf_counter() - noise_started_at,
+        )
+
+    try:
+        feature_started_at = time.perf_counter()
+        feature_2d = _extract_features(y, sr=sr, config=ASSETS["config"])
+        logger.info(
+            "Feature extraction finished: filename=%s frames=%s features=%s extract_sec=%.2f",
+            filename,
+            feature_2d.shape[0],
+            feature_2d.shape[1],
+            time.perf_counter() - feature_started_at,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Gagal ekstraksi fitur: {exc}") from exc
+
+    if feature_2d.shape[1] != 120:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Dimensi fitur tidak sesuai. Ditemukan {feature_2d.shape[1]}, diharapkan 120.",
+        )
+
+    scaler = ASSETS["scaler"]
+    prep_started_at = time.perf_counter()
+    scaled_feature_2d = scaler.transform(feature_2d)
+    max_frames = int(ASSETS["max_frames"])
+    model_input_2d = _pad_or_truncate(scaled_feature_2d, max_frames=max_frames)
+    logger.info(
+        "Feature prep finished: filename=%s max_frames=%s prep_sec=%.2f",
+        filename,
+        max_frames,
+        time.perf_counter() - prep_started_at,
+    )
+
+    x = model_input_2d.astype(np.float32).reshape(1, max_frames, 120)
+
+    model = ASSETS["model"]
+    predict_started_at = time.perf_counter()
+    probs = model.predict(x, verbose=0)[0]
+    logger.info(
+        "Model inference finished: filename=%s predict_sec=%.2f total_request_sec=%.2f",
+        filename,
+        time.perf_counter() - predict_started_at,
+        time.perf_counter() - request_started_at,
+    )
+    pred_idx = int(np.argmax(probs))
+    confidence = float(probs[pred_idx]) * 100.0
+
+    label_encoder = ASSETS["label_encoder"]
+    pred_code = _to_code(label_encoder.inverse_transform([pred_idx])[0])
+    dominant_emotion = EMOTION_MAP.get(pred_code, pred_code)
+
+    probability_items: list[ProbabilityItem] = []
+    for idx, prob in enumerate(probs):
+        code = _to_code(label_encoder.inverse_transform([idx])[0])
+        probability_items.append(
+            ProbabilityItem(
+                name=EMOTION_MAP.get(code, code),
+                value=round(float(prob) * 100.0, 2),
+            )
+        )
+
+    probability_items.sort(key=lambda item: item.value, reverse=True)
+
+    return AnalyzeResponse(
+        dominant_emotion=dominant_emotion,
+        confidence=round(confidence, 2),
+        probabilities=probability_items,
+    )
+
+
 @app.post("/api/analyze", response_model=AnalyzeResponse)
 async def analyze_audio(
     audio: UploadFile = File(...),
     use_noise_reduction: bool = Form(False),
 ) -> AnalyzeResponse:
-    request_started_at = time.perf_counter()
     if "model" not in ASSETS:
         raise HTTPException(
             status_code=503, detail="Model belum siap. Coba lagi beberapa saat.")
@@ -366,114 +477,11 @@ async def analyze_audio(
         temp_path = Path(tmp_file.name)
 
     try:
-        target_sr = 16000
-        load_started_at = time.perf_counter()
-        y, sr = librosa.load(temp_path, sr=target_sr, mono=True)
-        logger.info(
-            "Audio decoded: filename=%s duration_sec=%.2f decode_sec=%.2f",
-            filename,
-            float(y.size / sr) if sr else 0.0,
-            time.perf_counter() - load_started_at,
+        return await run_in_threadpool(
+            _analyze_audio_file_sync,
+            filename=filename,
+            temp_path=temp_path,
+            use_noise_reduction=use_noise_reduction,
         )
-    except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=f"Gagal membaca file audio: {exc}") from exc
     finally:
         temp_path.unlink(missing_ok=True)
-
-    if y.size == 0:
-        raise HTTPException(
-            status_code=400, detail="Audio tidak valid atau durasi terlalu pendek.")
-
-    # Step 2: peak normalize
-    y = _normalize_peak(y)
-
-    # Step 3: optional noise reduction (default OFF)
-    if use_noise_reduction:
-        noise_started_at = time.perf_counter()
-        noise_range = ASSETS["config"].get("preprocessing", {}).get(
-            "noise_freq_range", [300, 3400])
-        low_hz = float(noise_range[0])
-        high_hz = float(noise_range[1])
-        y = _bandpass_filter(y, sr=sr, low_hz=low_hz, high_hz=high_hz)
-        y = nr.reduce_noise(y=y, sr=sr)
-        logger.info(
-            "Noise reduction finished: filename=%s noise_reduction_sec=%.2f",
-            filename,
-            time.perf_counter() - noise_started_at,
-        )
-
-    # Step 4: MFCC + delta + delta2
-    try:
-        feature_started_at = time.perf_counter()
-        feature_2d = _extract_features(y, sr=sr, config=ASSETS["config"])
-        logger.info(
-            "Feature extraction finished: filename=%s frames=%s features=%s extract_sec=%.2f",
-            filename,
-            feature_2d.shape[0],
-            feature_2d.shape[1],
-            time.perf_counter() - feature_started_at,
-        )
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Gagal ekstraksi fitur: {exc}") from exc
-
-    if feature_2d.shape[1] != 120:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Dimensi fitur tidak sesuai. Ditemukan {feature_2d.shape[1]}, diharapkan 120.",
-        )
-
-    # Step 5: scale + pad/truncate to max_frames
-    scaler = ASSETS["scaler"]
-    prep_started_at = time.perf_counter()
-    scaled_feature_2d = scaler.transform(feature_2d)
-    max_frames = int(ASSETS["max_frames"])
-    model_input_2d = _pad_or_truncate(scaled_feature_2d, max_frames=max_frames)
-    logger.info(
-        "Feature prep finished: filename=%s max_frames=%s prep_sec=%.2f",
-        filename,
-        max_frames,
-        time.perf_counter() - prep_started_at,
-    )
-
-    # Step 6: reshape for BiLSTM -> (1, max_frames, 120)
-    x = model_input_2d.astype(np.float32).reshape(1, max_frames, 120)
-
-    # Step 7: predict
-    model = ASSETS["model"]
-    predict_started_at = time.perf_counter()
-    probs = model.predict(x, verbose=0)[0]
-    logger.info(
-        "Model inference finished: filename=%s predict_sec=%.2f total_request_sec=%.2f",
-        filename,
-        time.perf_counter() - predict_started_at,
-        time.perf_counter() - request_started_at,
-    )
-    pred_idx = int(np.argmax(probs))
-    confidence = float(probs[pred_idx]) * 100.0
-
-    # Step 8: decode dominant label code
-    label_encoder = ASSETS["label_encoder"]
-    pred_code = _to_code(label_encoder.inverse_transform([pred_idx])[0])
-
-    # Step 9: map code -> emotion label
-    dominant_emotion = EMOTION_MAP.get(pred_code, pred_code)
-
-    probability_items: list[ProbabilityItem] = []
-    for idx, prob in enumerate(probs):
-        code = _to_code(label_encoder.inverse_transform([idx])[0])
-        probability_items.append(
-            ProbabilityItem(
-                name=EMOTION_MAP.get(code, code),
-                value=round(float(prob) * 100.0, 2),
-            )
-        )
-
-    probability_items.sort(key=lambda item: item.value, reverse=True)
-
-    return AnalyzeResponse(
-        dominant_emotion=dominant_emotion,
-        confidence=round(confidence, 2),
-        probabilities=probability_items,
-    )
