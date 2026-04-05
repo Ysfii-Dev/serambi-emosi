@@ -118,18 +118,23 @@ export default function InputAudioPage({ onAnalyze }: InputAudioPageProps) {
         method: 'POST',
         body: formData,
       });
-      
+
+      const rawBody = await response.text();
       let payload: unknown = null;
-      try {
-        payload = await response.json();
-      } catch {
-        payload = null;
+      if (rawBody.trim()) {
+        try {
+          payload = JSON.parse(rawBody) as unknown;
+        } catch {
+          payload = rawBody.trim();
+        }
       }
 
       if (!response.ok) {
         const detail = typeof payload === 'object' && payload && 'detail' in payload
           ? String((payload as { detail: unknown }).detail)
-          : 'Gagal menganalisis audio';
+          : typeof payload === 'string' && payload
+            ? `HTTP ${response.status}: ${payload}`
+            : `HTTP ${response.status}: ${response.statusText || 'Gagal menganalisis audio'}`;
         throw new Error(detail);
       }
       
