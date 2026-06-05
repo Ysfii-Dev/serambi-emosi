@@ -10,6 +10,16 @@ interface ResultPageProps {
   onReset: () => void;
 }
 
+const getDisplayEmotionName = (emotionName: string) => {
+  const aliases: Record<string, string> = {
+    'sedih': 'Kecewa',
+    'kecewa (sedih)': 'Kecewa',
+  };
+
+  const normalizedEmotionName = emotionName.trim();
+  return aliases[normalizedEmotionName.toLowerCase()] || normalizedEmotionName;
+};
+
 export default function ResultPage({ file, result, onReset }: ResultPageProps) {
   const [data, setData] = useState<Array<{ name: string; value: number; color: string; textColor: string }>>([]);
   const [dominantEmotion, setDominantEmotion] = useState<{ name: string; value: number; color: string; textColor: string } | null>(null);
@@ -23,17 +33,20 @@ export default function ResultPage({ file, result, onReset }: ResultPageProps) {
       'Netral': { bg: 'var(--color-emo-netral)', text: '#424242' },
       'Terkejut': { bg: 'var(--color-emo-terkejut)', text: '#e65100' },
       'Sedih': { bg: 'var(--color-emo-sedih)', text: '#1565c0' },
-      'Kecewa': { bg: 'var(--color-emo-sedih)', text: '#1565c0' }, // Map Kecewa to Sedih colors
-      'Kecewa (Sedih)': { bg: 'var(--color-emo-sedih)', text: '#1565c0' },
+      'Kecewa': { bg: 'var(--color-emo-sedih)', text: '#1565c0' },
       'Jijik': { bg: 'var(--color-emo-jijik)', text: '#6a1b9a' },
     };
 
-    const mappedData = result.probabilities.map((prob) => ({
-      name: prob.name,
-      value: prob.value,
-      color: colorMap[prob.name]?.bg || 'var(--color-emo-netral)',
-      textColor: colorMap[prob.name]?.text || '#424242',
-    }));
+    const mappedData = result.probabilities.map((prob) => {
+      const displayName = getDisplayEmotionName(prob.name);
+
+      return {
+        name: displayName,
+        value: prob.value,
+        color: colorMap[displayName]?.bg || 'var(--color-emo-netral)',
+        textColor: colorMap[displayName]?.text || '#424242',
+      };
+    });
 
     // Sort by value descending
     const sortedData = [...mappedData].sort((a, b) => b.value - a.value);
@@ -41,7 +54,8 @@ export default function ResultPage({ file, result, onReset }: ResultPageProps) {
     setData(sortedData);
     
     // Find the dominant emotion details based on the result
-    const dominant = sortedData.find(d => d.name === result.dominant_emotion) || sortedData[0];
+    const dominantName = getDisplayEmotionName(result.dominant_emotion);
+    const dominant = sortedData.find(d => d.name === dominantName) || sortedData[0];
     setDominantEmotion(dominant);
 
   }, [file, result]);
@@ -52,8 +66,7 @@ export default function ResultPage({ file, result, onReset }: ResultPageProps) {
         return "Suara Anda memancarkan energi positif dan keceriaan. Terus pertahankan semangat ini, karena kebahagiaan Anda dapat menular dan membawa dampak baik bagi orang-orang di sekitar Anda.";
       case 'Sedih':
       case 'Kecewa':
-      case 'Kecewa (Sedih)':
-        return "Terdengar ada beban atau kesedihan dalam nada suara Anda. Tidak apa-apa untuk merasa tidak baik-baik saja. Beri waktu bagi diri sendiri untuk pulih, dan jangan ragu untuk berbagi cerita dengan orang terdekat.";
+        return "Terdengar ada beban atau rasa kecewa dalam nada suara Anda. Tidak apa-apa untuk merasa tidak baik-baik saja. Beri waktu bagi diri sendiri untuk pulih, dan jangan ragu untuk berbagi cerita dengan orang terdekat.";
       case 'Terkejut':
         return "Ada indikasi keterkejutan atau antusiasme mendadak dalam suara Anda. Emosi ini sering kali muncul saat menghadapi hal baru atau tak terduga. Ambil napas sejenak untuk memproses situasi.";
       case 'Jijik':
